@@ -1,1 +1,1 @@
-# oasis-repository-template
+SCIB Github Workflow templates
