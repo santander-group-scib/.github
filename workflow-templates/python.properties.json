@@ -1,0 +1,12 @@
+{
+    "name": "Python Workflow",
+    "description": "Python CI workflow template.",
+    "iconName": "python-icon",
+    "categories": [
+        "Python"
+    ],
+    "filePatterns": [
+        "**/requirements.txt$",
+        "^Dockerfile"
+    ]
+}
