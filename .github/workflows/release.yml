@@ -22,6 +22,9 @@ jobs:
         # TODO The pyhton script is done but not deployed
         run: |
           NEW_TAG=$(python generate_new_tag.py) 
-          echo "::set-env name=NEW_TAG::$NEW_TAG"      
-
-      
+          echo "::set-env name=NEW_TAG::$NEW_TAG"
+      - name: Find last commit user info    
+        run: |
+          curl -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{secrets.GITHUB_TOKEN}}" \
+          https://api.github.com/users/${{github.actor}}
