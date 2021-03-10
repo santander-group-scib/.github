@@ -79,5 +79,5 @@ jobs:
           -Dsonar.python.coverage.reportPaths=$REPORT_PATHS
         env:
           PROJECT_BASE_DIR: "./src/"
-          EXCLUSIONS: "./src/requirements.txt"
+          EXCLUSIONS: "./requirements.txt"
           REPORT_PATHS: "*coverage-*.xml"
