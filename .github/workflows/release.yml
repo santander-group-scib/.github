@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      # The final objective is to create a Draft Release with the appropiate version tag.
+      - name: Find latest Release
+        run: |
+          LATEST_RELEASE=$(curl -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{secrets.GITHUB_TOKEN}}" \
+          https://api.github.com/repos/${{github.repository}}/releases/latest \
+          | python -c "import json, sys; response=json.load(sys.stdin); tag=response['tag_name'] if 'tag_name' in response else response['message']; sys.stdout.write(tag); sys.exit(0)")
+          echo "::set-env name=LATEST_RELEASE::$LATEST_RELEASE"
+      - name: Generate a new tag
+        # TODO The pyhton script is done but not deployed
+        run: |
+          NEW_TAG=$(python generate_new_tag.py) 
+          echo "::set-env name=NEW_TAG::$NEW_TAG"      
+
+      
