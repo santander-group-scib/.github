@@ -1,50 +1,83 @@
-# This is a basic workflow to help you get started with Actions
-name: Python CI
+# This SonarQube workflow provides quality and coverage analysis
+name: Sonar Scan CI
 
-# Controls when the action will run.
+# Controls when the action will run. 
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
-
+    branches: [ main ]
+  
+# Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+  
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "scan"
   scan:
     # The type of runner that the job will run on
     runs-on: [self-hosted, linux, x64]
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/agent/miniconda3/bin:/agent/java/jre/bin:/agent/maven/bin:/agent/sonar-scanner/sonar-scanner-4.6.0.2311-linux/bin
-    if: "!contains(github.event.head_commit.message, 'ci-skip')"
+      SONAR_PROJECT_KEY: ${{github.repository_owner}}:${{github.event.repository.name}}:${{github.head_ref}}
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Override git client provided in action from self-hosted runner.
-      - name: Configure Git CLI (self hosted Runner)
-        run: echo "/agent/miniconda3/bin/" >> $GITHUB_PATH
-
-      - name: Display env variables in current workflow run.
-        run: env
-
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Clone Repository
         uses: actions/checkout@v2.3.4
-
-      # Display naming-convention used to onboard project in SonarQube.
-      - name: Display github org/repo/branch
-        run: echo ${{github.repository_owner}}-${{github.event.repository.name}}-${{github.head_ref}}
-        # e.g.: santander-group-scib-oasis-lab-josemanuelcalvo-patch-2
-
-      # Sonar-Scanner analyze src folder.
-      - name: SonarQube analyzing
-        run: sonar-scanner -Dsonar.host.url=${{secrets.SONAR_HOST_DEV}} -Dsonar.login=${{secrets.SONAR_TOKEN_DEV}} -Dsonar.projectKey=$PROJECT_KEY -Dsonar.projectBaseDir=$PROJECT_BASE_DIR -Dsonar.exclusions=$EXCLUSIONS
+      
+      - name: Connectivity Test
+        run: |
+          export no_proxy=sonarqube.taas.scib.dev.corp
+          STATUS=$(curl -k -o /dev/null -s -w "%{http_code}\n" -u ${{secrets.SONAR_TOKEN_DEV}}: \
+          ${{secrets.SONAR_HOST_DEV}}/api/projects/search?projects=$SONAR_PROJECT_KEY)
+          if [ $STATUS = "401" ]; then
+            echo  $STATUS '- Unauthorized' 
+          elif [ $STATUS = "000" ]; then
+            echo $STATUS ' - Bad Request' 
+          elif [ $STATUS = "200" ]; then
+            echo $STATUS ' - Communication Success'
+          else
+            echo $STATUS ' - Unexpected response' 
+          fi  
+        
+      - name: SonarQube Project Registration
+        if: success()
+        run: |
+          export no_proxy=sonarqube.taas.scib.dev.corp
+          FOUND=$(curl -k -s -u ${{secrets.SONAR_TOKEN_DEV}}: \
+          ${{secrets.SONAR_HOST_DEV}}/api/projects/search?projects=$SONAR_PROJECT_KEY | grep -i $SONAR_PROJECT_KEY | grep -i "\"total\":1" | wc -l)
+          echo $FOUND ' Projects found with key' $SONAR_PROJECT_KEY
+          if [ $FOUND = "0" ]; then
+            echo "Creating the project in SonarQube..."
+            curl -X POST -k -s -u ${{secrets.SONAR_TOKEN_DEV}}: ${{secrets.SONAR_HOST_DEV}}/api/projects/create?project=$SONAR_PROJECT_KEY&name=$SONAR_PROJECT_KEY&visibility=public
+          else
+            echo '[OK]-' $FOUND ' The project already exists in SonarQube'
+          fi
+          
+      - name: Selecting Quality-Gate
+        if: success()
+        run: |
+          export no_proxy=sonarqube.taas.scib.dev.corp
+          GATE=$(curl -k -s -u ${{secrets.SONAR_TOKEN_DEV}}: \
+          ${{secrets.SONAR_HOST_DEV}}/api/qualitygates/get_by_project?project=$SONAR_PROJECT_KEY | grep -i "oasis" | wc -l)
+          RESULT=$(curl -k -s -u ${{secrets.SONAR_TOKEN_DEV}}: \
+          ${{secrets.SONAR_HOST_DEV}}/api/qualitygates/get_by_project?project=$SONAR_PROJECT_KEY)
+          if [ $GATE = "1" ]; then
+            echo 'The project already has a Quality Gate assigned\n' $RESULT
+          else        
+            echo "Selecting Quality-Gate for the project..."
+            curl -X POST -k -s -u ${{secrets.SONAR_TOKEN_DEV}}: '${{secrets.SONAR_HOST_DEV}}/api/qualitygates/select?gateName=oasis&projectKey=$SONAR_PROJECT_KEY' 
+          fi
+        
+      - name: SonarQube analysis  
+        run: |
+          sonar-scanner -Dsonar.host.url=${{secrets.SONAR_HOST_DEV}} \
+          -Dsonar.login=${{secrets.SONAR_TOKEN_DEV}} \
+          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+          -Dsonar.projectBaseDir=$PROJECT_BASE_DIR \
+          -Dsonar.exclusions=$EXCLUSIONS \
+          -Dsonar.python.coverage.reportPaths=$REPORT_PATHS
         env:
-          PROJECT_KEY: ${{github.repository_owner}}-${{github.event.repository.name}}-${{github.head_ref}}
           PROJECT_BASE_DIR: "./src/"
           EXCLUSIONS: "./src/requirements.txt"
-
-      - name: Clean Up job
-        if: always()
-        run: |
-          echo Cleaning Workspace...
+          REPORT_PATHS: "*coverage-*.xml"
